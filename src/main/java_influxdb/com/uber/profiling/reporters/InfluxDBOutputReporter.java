@@ -12,6 +12,14 @@ import org.influxdb.InfluxDB.ConsistencyLevel;
 import org.influxdb.InfluxDBFactory;
 import org.influxdb.dto.BatchPoints;
 import org.influxdb.dto.Point;
+import com.influxdb.annotations.Column;
+import com.influxdb.annotations.Measurement;
+import com.influxdb.client.InfluxDBClient;
+import com.influxdb.client.InfluxDBClientFactory;
+import com.influxdb.client.WriteApi;
+import com.influxdb.client.domain.WritePrecision;
+import com.influxdb.client.write.Point;
+import com.influxdb.query.FluxTable;
 
 import com.uber.profiling.Reporter;
 import com.uber.profiling.util.AgentLogger;
@@ -50,11 +58,21 @@ public class InfluxDBOutputReporter implements Reporter {
     private String database = "metrics";
     private String username = "admin";
     private String password = "admin";
+    // Added for influx DB cloud
+    private String url = "";
+    private String token = "";
+    private String bucket = "";
+    private String org = "";
 
     @Override
     public void report(String profilerName, Map<String, Object> metrics) {
         // get DB connection
-        ensureInfluxDBCon();
+        if (url.isEmpty()){
+            ensureInfluxDBCon();
+        } else {
+            ensureInfluxDBCon_cloud();
+        }
+        
         // format metrics 
         logger.info("Profiler Name : " + profilerName);
         Map<String, Object> formattedMetrics = getFormattedMetrics(metrics);
@@ -153,6 +171,22 @@ public class InfluxDBOutputReporter implements Reporter {
         }
     }
 
+    private void ensureInfluxDBCon_cloud() {
+        synchronized (this) {
+            if (influxDB != null) {
+                return;
+            }
+            String url = "http://" + host + ":" + port;
+            logger.info("Trying to connect InfluxDB using url=" + url + ", bucket=" + bucket + ", org="
+                    + org + ", token =" + token);
+            this.influxDB = InfluxDBClientFactory.create(url, token.toCharArray());
+            // enable batch
+            this.influxDB.enableBatch(BatchOptions.DEFAULTS);
+            // set log level
+            influxDB.setLogLevel(InfluxDB.LogLevel.BASIC);
+        }
+    }
+
     // properties from yaml file
     @Override
     public void updateArguments(Map<String, List<String>> connectionProperties) {
@@ -173,10 +207,19 @@ public class InfluxDBOutputReporter implements Reporter {
                 } else if (key.equals("influxdb.username")) {
                     logger.info("Got value for username = "+stringValue);
                     this.username = stringValue;
-                } else if (key.equals("influxdb.password")) {
-                    logger.info("Got value for password = "+stringValue);
-                    this.password = stringValue;
-                }
+                } else if (key.equals("influxdb.url")) {
+                    logger.info("Got value for url = "+stringValue);
+                    this.url = stringValue;
+                } else if (key.equals("influxdb.token")) {
+                    logger.info("Got value for token = "+stringValue);
+                    this.token = stringValue;
+                } else if (key.equals("influxdb.bucket")) {
+                    logger.info("Got value for bucket = "+stringValue);
+                    this.bucket = stringValue;
+                } else if (key.equals("influxdb.org")) {
+                    logger.info("Got value for org = "+stringValue);
+                    this.org = stringValue;
+                }      
             }
         }
     }
